@@ -37,24 +37,21 @@ function createNewDashboardBatchOptimized() {
       ["Last Processed Row", "Value"],
       ["Sales Invoice Responses", 1]
     ]);
-    console.log("Created config sheet: " + configSheetName);
+
   }
 
   // Get last processed row number
   const lastProcessedRow = configSheet.getRange("B2").getValue() || 1;
-  console.log("Last processed row: " + lastProcessedRow);
 
   // Create target sheet if not exists
   if (!targetSheet) {
     targetSheet = ss.insertSheet(targetSheetName);
     targetSheet.appendRow(headers);
-    console.log("Created target sheet: " + targetSheetName);
   }
 
   // Read source data
   const sourceData = sourceSheet.getDataRange().getValues();
   const totalSourceRows = sourceData.length;
-  console.log("Total source data rows: " + totalSourceRows);
 
   // Determine start and end rows for processing
   const START_ROW = Math.max(2, lastProcessedRow + 1); // Start from row after last processed
@@ -65,7 +62,7 @@ function createNewDashboardBatchOptimized() {
     return;
   }
 
-  console.log("Processing new rows from " + START_ROW + " to " + END_ROW);
+
 
   // Read existing dashboard data into memory
   const lastRow = targetSheet.getLastRow();
