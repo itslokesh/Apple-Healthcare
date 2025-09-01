@@ -2,141 +2,159 @@ function createNewDashboardBatchOptimized() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sourceSheet = ss.getSheetByName("Sales Invoice responses");
   const targetSheetName = "New Dashboard";
+  const configSheetName = "Dashboard Config";
   let targetSheet = ss.getSheetByName(targetSheetName);
-  if (!sourceSheet) throw new Error('Source sheet "Sales Invoice responses" not found');
+  let configSheet = ss.getSheetByName(configSheetName);
 
-  // Headers for New Dashboard
+  // Headers
   const headers = [
-    "Bill No",
-    "Customer Name",
-    "Picked By",
-    "Bill Picked Timestamp",
-    "Packed By",
-    "Packing Timestamp",
-    "E-way Bill By",
-    "E-way Bill Timestamp",
-    "Shipping By",
-    "Shipping Timestamp",
-    "Courier",
-    "No of Boxes",
-    "Weight (kg)",
-    "AWB Number",
-    "AWB Timestamp",
-    "Invoice State",
-    "Day",
-    "Month",
-    "Invalid Data"
+    "Bill No",           // index 0
+    "Manual Bill Entry", // index 1 - NEW COLUMN
+    "Customer Name",     // index 2
+    "Picked By",        // index 3
+    "Bill Picked Timestamp", // index 4
+    "Packed By",        // index 5
+    "Packing Timestamp", // index 6
+    "E-way Bill By",    // index 7
+    "E-way Bill Timestamp", // index 8
+    "Shipping By",       // index 9
+    "Shipping Timestamp", // index 10
+    "Courier",          // index 11
+    "No of Boxes",      // index 12
+    "Weight (kg)",      // index 13
+    "AWB Number",       // index 14
+    "AWB Timestamp",    // index 15
+    "Invoice State",    // index 16
+    "Day",              // index 17
+    "Month",            // index 18
+    "Invalid Data"      // index 19
   ];
 
-  // Create sheet if not exists
+  // Create or get config sheet to track last processed row
+  if (!configSheet) {
+    configSheet = ss.insertSheet(configSheetName);
+    configSheet.getRange("A1:B2").setValues([
+      ["Last Processed Row", "Value"],
+      ["Sales Invoice Responses", 1]
+    ]);
+    console.log("Created config sheet: " + configSheetName);
+  }
+
+  // Get last processed row number
+  const lastProcessedRow = configSheet.getRange("B2").getValue() || 1;
+  console.log("Last processed row: " + lastProcessedRow);
+
+  // Create target sheet if not exists
   if (!targetSheet) {
     targetSheet = ss.insertSheet(targetSheetName);
     targetSheet.appendRow(headers);
-  } else if (targetSheet.getLastRow() === 0) {
-    targetSheet.appendRow(headers);
+    console.log("Created target sheet: " + targetSheetName);
   }
 
-  // --- Incremental window (no daily guard) ---
-  const props = PropertiesService.getScriptProperties();
-  const LAST_ROW_KEY = `${ss.getId()}:${sourceSheet.getSheetId()}:salesResp:lastProcessedRow`;
+  // Read source data
+  const sourceData = sourceSheet.getDataRange().getValues();
+  const totalSourceRows = sourceData.length;
+  console.log("Total source data rows: " + totalSourceRows);
 
-  const sourceLastRow = sourceSheet.getLastRow();
-  const sourceLastCol = sourceSheet.getLastColumn();
+  // Determine start and end rows for processing
+  const START_ROW = Math.max(2, lastProcessedRow + 1); // Start from row after last processed
+  const END_ROW = totalSourceRows;
 
-  // Start after the last processed row; never before row 2 (skip header)
-  const lastProcessedRow = Number(props.getProperty(LAST_ROW_KEY)) || 1;
-  const startRow = Math.max(lastProcessedRow + 1, 2);
-  const endRow = sourceLastRow;
-
-  if (startRow > endRow) {
-    // Nothing new
+  if (START_ROW > END_ROW) {
+    console.log("No new data to process. All rows up to " + END_ROW + " have been processed.");
     return;
   }
 
-  // Read only the newly added rows
-  const sourceData = sourceSheet.getRange(startRow, 1, endRow - startRow + 1, sourceLastCol).getValues();
+  console.log("Processing new rows from " + START_ROW + " to " + END_ROW);
 
   // Read existing dashboard data into memory
   const lastRow = targetSheet.getLastRow();
-  const existingRowsCount = Math.max(0, lastRow - 1);
-  let dashboardData = existingRowsCount > 0
-    ? targetSheet.getRange(2, 1, existingRowsCount, headers.length).getValues()
-    : [];
-  const dashboardMap = {}; // BillNo -> index in dashboardData
+  let dashboardData = lastRow > 1 ? targetSheet.getRange(2, 1, lastRow - 1, headers.length).getValues() : [];
+  let dashboardMap = {}; // BillNo -> index in dashboardData
 
   dashboardData.forEach((row, idx) => {
     const bn = row[0];
     if (bn) dashboardMap[String(bn).trim()] = idx;
   });
 
-  const invalidRows = [];
+  let invalidRows = [];
+  let processedCount = 0;
+  let newEntriesCount = 0;
+  let updatedEntriesCount = 0;
 
-  // Process appended/new rows only
-  // Note: indices below follow your original mapping from the source sheet
-  sourceData.forEach(row => {
+  // Process only new rows
+  for (let i = START_ROW - 1; i <= Math.min(END_ROW - 1, sourceData.length - 1); i++) {
+    const row = sourceData[i];
     const billNoRaw = row[3];
     const processType = row[4]?.toString().trim().toLowerCase();
     const timestamp = row[1] || "";
 
     if (!billNoRaw || String(billNoRaw).trim() === "") {
       invalidRows.push(row);
-      return;
+      continue;
     }
 
+    processedCount++;
     const billNo = String(billNoRaw).trim();
 
     let entry;
+    let isNewEntry = false;
+    
     if (dashboardMap.hasOwnProperty(billNo)) {
       entry = dashboardData[dashboardMap[billNo]];
+      updatedEntriesCount++;
     } else {
       entry = Array(headers.length).fill("");
       entry[0] = billNo; // Bill No
       dashboardData.push(entry);
       dashboardMap[billNo] = dashboardData.length - 1;
+      newEntriesCount++;
+      isNewEntry = true;
     }
 
+    // Process the data based on process type
     switch (processType) {
       case "bill picked":
-        entry[1] = row[6] || entry[1]; // Customer
-        entry[2] = row[5] || entry[2]; // Picked By
-        entry[3] = timestamp || entry[3]; // Bill Picked TS
+        entry[2] = row[6] || entry[2]; // Customer Name (index 2)
+        entry[3] = row[5] || entry[3]; // Picked By (index 3)
+        entry[4] = timestamp || entry[4]; // Bill Picked TS (index 4)
         break;
       case "packing":
-        entry[4] = row[9] || entry[4]; // Packed By
-        entry[5] = timestamp || entry[5]; // Packing TS
-        entry[11] = row[7] || entry[11]; // No of Boxes
-        entry[12] = row[8] || entry[12]; // Weight
+        entry[5] = row[9] || entry[5]; // Packed By (index 5)
+        entry[6] = timestamp || entry[6]; // Packing TS (index 6)
+        entry[12] = row[7] || entry[12]; // No of Boxes (index 12)
+        entry[13] = row[8] || entry[13]; // Weight (index 13)
         break;
       case "eway bill":
-        entry[6] = row[12] || entry[6]; // E-way Bill By
-        entry[7] = timestamp || entry[7]; // E-way TS
+        entry[7] = row[12] || entry[7]; // E-way Bill By (index 7)
+        entry[8] = timestamp || entry[8]; // E-way TS (index 8)
         break;
       case "shipping":
-        entry[8] = row[15] || entry[8]; // Shipping By
-        entry[9] = timestamp || entry[9]; // Shipping TS
-        entry[10] = row[14] || entry[10]; // Courier
+        entry[9] = row[15] || entry[9]; // Shipping By (index 9)
+        entry[10] = timestamp || entry[10]; // Shipping TS (index 10)
+        entry[11] = row[14] || entry[11]; // Courier (index 11)
         break;
       case "awb number":
-        entry[13] = row[17] || entry[13]; // AWB Number
-        entry[14] = timestamp || entry[14]; // AWB TS
+        entry[14] = row[17] || entry[14]; // AWB Number (index 14)
+        entry[15] = timestamp || entry[15]; // AWB TS (index 15)
         break;
     }
 
-    // Update Invoice State
-    if (!entry[2]) entry[15] = "Pending Pick";
-    else if (!entry[4]) entry[15] = "Pending Pack";
-    else if (!entry[8]) entry[15] = "Pending Ship";
-    else entry[15] = "Shipped";
+    // Update Invoice State (index 16)
+    if (!entry[3]) entry[16] = "Pending Pick";
+    else if (!entry[5]) entry[16] = "Pending Pack";
+    else if (!entry[9]) entry[16] = "Pending Ship";
+    else entry[16] = "Shipped";
 
-    // Update Day / Month from Bill Picked Timestamp
-    if (entry[3]) {
-      const dt = new Date(entry[3]);
-      entry[16] = dt.getDate();
-      entry[17] = dt.getMonth() + 1;
+    // Update Day / Month from Bill Picked Timestamp (indices 17, 18)
+    if (entry[4]) {
+      const dt = new Date(entry[4]);
+      entry[17] = dt.getDate();
+      entry[18] = dt.getMonth() + 1;
     }
-  });
+  }
 
-  // Write dashboardData back (overwrite body from row 2)
+  // Write dashboardData back
   if (dashboardData.length > 0) {
     targetSheet.getRange(2, 1, dashboardData.length, headers.length).setValues(dashboardData);
   }
@@ -153,6 +171,50 @@ function createNewDashboardBatchOptimized() {
     targetSheet.getRange(startRowIndex, 1, invalidDataArr.length, headers.length).setBackground("red");
   }
 
-  // --- Persist checkpoint (only last processed source row) ---
-  props.setProperty(LAST_ROW_KEY, String(endRow));
+  // Update the last processed row in config sheet
+  configSheet.getRange("B2").setValue(END_ROW);
+  
+  // Log summary
+  console.log("=== PROCESSING SUMMARY ===");
+  console.log("Rows processed: " + processedCount);
+  console.log("New entries added: " + newEntriesCount);
+  console.log("Existing entries updated: " + updatedEntriesCount);
+  console.log("Invalid rows: " + invalidRows.length);
+  console.log("Last processed row updated to: " + END_ROW);
+  console.log("Next run will start from row: " + (END_ROW + 1));
+}
+
+// Function to reset the processing counter (use this if you want to reprocess all data)
+function resetProcessingCounter() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const configSheet = ss.getSheetByName("Dashboard Config");
+  
+  if (configSheet) {
+    configSheet.getRange("B2").setValue(1);
+    console.log("Processing counter reset to row 1. Next run will process all data.");
+  } else {
+    console.log("Config sheet not found. Run createNewDashboardBatchOptimized() first.");
+  }
+}
+
+// Function to show current processing status
+function showProcessingStatus() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const configSheet = ss.getSheetByName("Dashboard Config");
+  const sourceSheet = ss.getSheetByName("Sales Invoice responses");
+  
+  if (!configSheet || !sourceSheet) {
+    console.log("Required sheets not found.");
+    return;
+  }
+  
+  const lastProcessedRow = configSheet.getRange("B2").getValue() || 1;
+  const totalSourceRows = sourceSheet.getDataRange().getValues().length;
+  const pendingRows = Math.max(0, totalSourceRows - lastProcessedRow);
+  
+  console.log("=== PROCESSING STATUS ===");
+  console.log("Last processed row: " + lastProcessedRow);
+  console.log("Total source rows: " + totalSourceRows);
+  console.log("Pending rows to process: " + pendingRows);
+  console.log("Next run will process rows: " + (lastProcessedRow + 1) + " to " + totalSourceRows);
 }

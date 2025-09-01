@@ -5,30 +5,31 @@ function createNewDashboardBatchOptimized() {
   let targetSheet = ss.getSheetByName(targetSheetName);
 
   // === CONFIGURE START / END ROWS HERE ===
-  const START_ROW = 15003; // first row of source data to process
-  const END_ROW = 21929; // last row of source data to process
+  const START_ROW = 2; // first row of source data to process
+  const END_ROW = 8000; // last row of source data to process
 
   // Headers
   const headers = [
-    "Bill No",
-    "Customer Name",
-    "Picked By",
-    "Bill Picked Timestamp",
-    "Packed By",
-    "Packing Timestamp",
-    "E-way Bill By",
-    "E-way Bill Timestamp",
-    "Shipping By",
-    "Shipping Timestamp",
-    "Courier",
-    "No of Boxes",
-    "Weight (kg)",
-    "AWB Number",
-    "AWB Timestamp",
-    "Invoice State",
-    "Day",
-    "Month",
-    "Invalid Data"
+    "Bill No",           // index 0
+    "Manual Bill Entry", // index 1 - NEW COLUMN
+    "Customer Name",     // index 2
+    "Picked By",        // index 3
+    "Bill Picked Timestamp", // index 4
+    "Packed By",        // index 5
+    "Packing Timestamp", // index 6
+    "E-way Bill By",    // index 7
+    "E-way Bill Timestamp", // index 8
+    "Shipping By",       // index 9
+    "Shipping Timestamp", // index 10
+    "Courier",          // index 11
+    "No of Boxes",      // index 12
+    "Weight (kg)",      // index 13
+    "AWB Number",       // index 14
+    "AWB Timestamp",    // index 15
+    "Invoice State",    // index 16
+    "Day",              // index 17
+    "Month",            // index 18
+    "Invalid Data"      // index 19
   ];
 
   // Create sheet if not exists
@@ -79,42 +80,42 @@ function createNewDashboardBatchOptimized() {
 
     switch (processType) {
       case "bill picked":
-        entry[1] = row[6] || entry[1]; // Customer
-        entry[2] = row[5] || entry[2]; // Picked By
-        entry[3] = timestamp || entry[3]; // Bill Picked TS
+        entry[2] = row[6] || entry[2]; // Customer Name (index 2)
+        entry[3] = row[5] || entry[3]; // Picked By (index 3)
+        entry[4] = timestamp || entry[4]; // Bill Picked TS (index 4)
         break;
       case "packing":
-        entry[4] = row[9] || entry[4]; // Packed By
-        entry[5] = timestamp || entry[5]; // Packing TS
-        entry[11] = row[7] || entry[11]; // No of Boxes
-        entry[12] = row[8] || entry[12]; // Weight
+        entry[5] = row[9] || entry[5]; // Packed By (index 5)
+        entry[6] = timestamp || entry[6]; // Packing TS (index 6)
+        entry[12] = row[7] || entry[12]; // No of Boxes (index 12)
+        entry[13] = row[8] || entry[13]; // Weight (index 13)
         break;
       case "eway bill":
-        entry[6] = row[12] || entry[6]; // E-way Bill By
-        entry[7] = timestamp || entry[7]; // E-way TS
+        entry[7] = row[12] || entry[7]; // E-way Bill By (index 7)
+        entry[8] = timestamp || entry[8]; // E-way TS (index 8)
         break;
       case "shipping":
-        entry[8] = row[15] || entry[8]; // Shipping By
-        entry[9] = timestamp || entry[9]; // Shipping TS
-        entry[10] = row[14] || entry[10]; // Courier
+        entry[9] = row[15] || entry[9]; // Shipping By (index 9)
+        entry[10] = timestamp || entry[10]; // Shipping TS (index 10)
+        entry[11] = row[14] || entry[11]; // Courier (index 11)
         break;
       case "awb number":
-        entry[13] = row[17] || entry[13]; // AWB Number
-        entry[14] = timestamp || entry[14]; // AWB TS
+        entry[14] = row[17] || entry[14]; // AWB Number (index 14)
+        entry[15] = timestamp || entry[15]; // AWB TS (index 15)
         break;
     }
 
-    // Update Invoice State
-    if (!entry[2]) entry[15] = "Pending Pick";
-    else if (!entry[4]) entry[15] = "Pending Pack";
-    else if (!entry[8]) entry[15] = "Pending Ship";
-    else entry[15] = "Shipped";
+    // Update Invoice State (index 16)
+    if (!entry[3]) entry[16] = "Pending Pick";
+    else if (!entry[5]) entry[16] = "Pending Pack";
+    else if (!entry[9]) entry[16] = "Pending Ship";
+    else entry[16] = "Shipped";
 
-    // Update Day / Month from Bill Picked Timestamp
-    if (entry[3]) {
-      const dt = new Date(entry[3]);
-      entry[16] = dt.getDate();
-      entry[17] = dt.getMonth() + 1;
+    // Update Day / Month from Bill Picked Timestamp (indices 17, 18)
+    if (entry[4]) {
+      const dt = new Date(entry[4]);
+      entry[17] = dt.getDate();
+      entry[18] = dt.getMonth() + 1;
     }
   }
 
