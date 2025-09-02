@@ -599,7 +599,37 @@ function generateMonthlyReportBeautified() {
     console.log("=== NO EXISTING CHART DATA FOUND ===");
   }
 
-  const monthsSorted = Object.keys(chartMonthlyMetrics).map(Number).sort((a,b)=>a-b);
+  // Safety check: ensure all month keys have valid data structure
+  Object.keys(chartMonthlyMetrics).forEach(monthKey => {
+    const monthData = chartMonthlyMetrics[monthKey];
+    if (!monthData || typeof monthData !== 'object') {
+      console.log(`Warning: Invalid month data for ${monthKey}, creating default structure`);
+      chartMonthlyMetrics[monthKey] = {
+        picked: 0,
+        packed: 0,
+        shipped: 0,
+        pendingPick: 0,
+        pendingPack: 0,
+        pendingShip: 0
+      };
+    } else {
+      // Ensure all required properties exist
+      const requiredProps = ['picked', 'packed', 'shipped', 'pendingPick', 'pendingPack', 'pendingShip'];
+      requiredProps.forEach(prop => {
+        if (typeof monthData[prop] !== 'number' || isNaN(monthData[prop])) {
+          monthData[prop] = 0;
+        }
+      });
+    }
+  });
+
+  const monthsSorted = Object.keys(chartMonthlyMetrics)
+    .map(m => {
+      const num = Number(m);
+      return isNaN(num) ? 0 : num; // Convert invalid numbers to 0
+    })
+    .filter(m => m > 0) // Only keep valid month numbers
+    .sort((a,b) => a-b);
   const monthNames = ["","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
   // Debug logging to understand what data is being processed
@@ -608,9 +638,25 @@ function generateMonthlyReportBeautified() {
   console.log("Months Sorted:", monthsSorted);
 
   const chartRows = monthsSorted.map(m => {
-    const mm = chartMonthlyMetrics[String(m)];
+    const monthKey = String(m);
+    const mm = chartMonthlyMetrics[monthKey];
+    
+    // Safety check: ensure the month data exists
+    if (!mm) {
+      console.log(`Warning: No data found for month ${monthKey}, creating default entry`);
+      chartMonthlyMetrics[monthKey] = {
+        picked: 0,
+        packed: 0,
+        shipped: 0,
+        pendingPick: 0,
+        pendingPack: 0,
+        pendingShip: 0
+      };
+    }
+    
     const monthLabel = monthNames[m] || String(m);
-    const row = [monthLabel, mm.picked, mm.packed, mm.shipped, mm.pendingPick, mm.pendingPack, mm.pendingShip];
+    const finalMm = chartMonthlyMetrics[monthKey]; // Get the final data (either existing or default)
+    const row = [monthLabel, finalMm.picked, finalMm.packed, finalMm.shipped, finalMm.pendingPick, finalMm.pendingPack, finalMm.pendingShip];
     console.log(`Chart Row for ${monthLabel}:`, row);
     return row;
   });

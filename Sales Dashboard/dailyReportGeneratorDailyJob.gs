@@ -181,13 +181,21 @@ function generateDailyReportBeautified() {
     mergeInfo.push({dayKey, startRowIndex, endRowIndex, dm});
   });
 
-  // Find last used row in employee metrics area (column A) to append after existing employee metrics
-  const colAValues = dailySheet.getRange(1, 1, dailySheet.getMaxRows(), 1).getValues();
-  let lastEmployeeRow = 1; // header row default
-  for (let i = colAValues.length - 1; i >= 1; i--) { // start from bottom, skip row 0 header
-    if (colAValues[i][0] !== "") { lastEmployeeRow = i + 1; break; }
-  }
-  const startWriteRow = Math.max(2, lastEmployeeRow + 1);
+     // Find last used row in employee metrics area (column A) to append after existing employee metrics
+   // Scan multiple columns to find the actual last row with data, accounting for merged cells
+   const colAValues = dailySheet.getRange(1, 1, dailySheet.getMaxRows(), 1).getValues();
+   const colBValues = dailySheet.getRange(1, 2, dailySheet.getMaxRows(), 1).getValues();
+   const colCValues = dailySheet.getRange(1, 3, dailySheet.getMaxRows(), 1).getValues();
+   
+   let lastEmployeeRow = 1; // header row default
+   for (let i = colAValues.length - 1; i >= 1; i--) { // start from bottom, skip row 0 header
+     // Check if any of the key columns have meaningful data (not just merged cell content)
+     if (colAValues[i][0] !== "" || colBValues[i][0] !== "" || colCValues[i][0] !== "") {
+       lastEmployeeRow = i + 1; 
+       break; 
+     }
+   }
+   const startWriteRow = Math.max(2, lastEmployeeRow + 1);
   dailySheet.getRange(startWriteRow, 1, batchValues.length, headers.length).setValues(batchValues);
 
   // --- Merge Date, Pending Ship (H), Customer Pending (I) wrap, Daily Summary & add borders ---
@@ -334,19 +342,27 @@ function generateDailyReportBeautified() {
   let customerMetricsWriteStart = null;
   let customerMetricsWriteEnd = null;
 
-  if (customerMetricsRows.length > 0) {
-    // Find last non-empty row in column L (metrics area) to append after existing customer metrics
-    const lastRowToCheck = Math.max(2, dailySheet.getMaxRows());
-    const colLValues = dailySheet.getRange(2, metricsStartCol, lastRowToCheck - 1, 1).getValues();
-    let lastNonEmpty = 1; // header row default
-    for (let i = colLValues.length - 1; i >= 0; i--) {
-      if (colLValues[i][0] !== "") { lastNonEmpty = i + 2; break; }
-    }
-    const startRow = Math.max(2, lastNonEmpty + 1);
-    dailySheet.getRange(startRow, metricsStartCol, customerMetricsRows.length, metricsWidth).setValues(customerMetricsRows);
-    customerMetricsWriteStart = startRow;
-    customerMetricsWriteEnd = startRow + customerMetricsRows.length - 1;
-  }
+     if (customerMetricsRows.length > 0) {
+     // Find last non-empty row in customer metrics area (columns L-R) to append after existing customer metrics
+     // Scan multiple columns to find the actual last row with data, accounting for merged cells
+     const lastRowToCheck = Math.max(2, dailySheet.getMaxRows());
+     const colLValues = dailySheet.getRange(2, metricsStartCol, lastRowToCheck - 1, 1).getValues();
+     const colMValues = dailySheet.getRange(2, metricsStartCol + 1, lastRowToCheck - 1, 1).getValues();
+     const colNValues = dailySheet.getRange(2, metricsStartCol + 2, lastRowToCheck - 1, 1).getValues();
+     
+     let lastNonEmpty = 1; // header row default
+     for (let i = colLValues.length - 1; i >= 0; i--) {
+       // Check if any of the key customer metrics columns have meaningful data
+       if (colLValues[i][0] !== "" || colMValues[i][0] !== "" || colNValues[i][0] !== "") {
+         lastNonEmpty = i + 2; 
+         break; 
+       }
+     }
+     const startRow = Math.max(2, lastNonEmpty + 1);
+     dailySheet.getRange(startRow, metricsStartCol, customerMetricsRows.length, metricsWidth).setValues(customerMetricsRows);
+     customerMetricsWriteStart = startRow;
+     customerMetricsWriteEnd = startRow + customerMetricsRows.length - 1;
+   }
 
   // Optional formatting for readability
   dailySheet.setColumnWidths(metricsStartCol, metricsWidth, 140);
@@ -394,8 +410,254 @@ function generateDailyReportBeautified() {
   // Update the last processed row in config sheet
   configSheet.getRange(dailyReportRowIndex, 2).setValue(END_ROW);
   
-  // Update Pending Orders Escalation sheet
-  updatePendingOrdersEscalation(rows);
+  // Update Pending Orders Escalation sheet INLINE
+  console.log("=== UPDATING PENDING ORDERS ESCALATION INLINE ===");
+  console.log("Rows to process:", rows.length);
+  console.log("First row sample:", rows[0]);
+  
+  try {
+    console.log("=== ESCALATION LOGIC STARTED ===");
+    
+    // Get or create escalation sheet
+    let escalationSheet = ss.getSheetByName("Pending Orders Escalation");
+    if (!escalationSheet) {
+      console.log("Creating new Pending Orders Escalation sheet");
+      escalationSheet = ss.insertSheet("Pending Orders Escalation");
+      
+      // Define escalation headers
+      const escalationHeaders = [
+        "Bill No", "Manual Bill Entry", "Customer Name", "Picked By", "Bill Picked Timestamp",
+        "Packed By", "Packing Timestamp", "E-way Bill By", "E-way Bill Timestamp",
+        "Shipping By", "Shipping Timestamp", "Courier", "No of Boxes", "Weight (kg)",
+        "AWB Number", "AWB Timestamp", "Days Pending", "Escalation Level"
+      ];
+      
+      // Set headers
+      escalationSheet.getRange(1, 1, 1, escalationHeaders.length)
+        .setValues([escalationHeaders])
+        .setFontWeight("bold")
+        .setBackground("#f1f3f4");
+      
+      // Auto-resize columns
+      escalationSheet.autoResizeColumns(1, escalationHeaders.length);
+      escalationSheet.setFrozenRows(1);
+      console.log("New escalation sheet created with headers");
+    } else {
+      console.log("Using existing Pending Orders Escalation sheet");
+    }
+    
+         // Get existing escalation data
+     const escalationData = escalationSheet.getDataRange().getValues();
+     const escalationHeaders = escalationData[0];
+     const existingRows = escalationData.slice(1);
+     
+     console.log("Escalation sheet has", existingRows.length, "existing rows");
+     
+     // Define column indices for escalation logic
+     const billPickedTimestampCol = headersRow.indexOf("Bill Picked Timestamp");
+     const packingTimestampCol = headersRow.indexOf("Packing Timestamp");
+     const ewayBillTimestampCol = headersRow.indexOf("E-way Bill Timestamp");
+     const shippingTimestampCol = headersRow.indexOf("Shipping Timestamp");
+     
+     console.log("Escalation column indices:", {
+       billPicked: billPickedTimestampCol,
+       packing: packingTimestampCol,
+       ewayBill: ewayBillTimestampCol,
+       shipping: shippingTimestampCol
+     });
+     
+     const currentDate = new Date();
+     const updatedRows = [];
+     
+     // Process new rows from dashboard
+     console.log("Processing", rows.length, "new rows from dashboard");
+     
+     rows.forEach((row, index) => {
+       const billNo = row[billNoCol];
+       const invoiceState = row[invoiceStateCol];
+       
+       console.log(`Row ${index + 1}: Bill ${billNo}, State: ${invoiceState}`);
+       
+       // Only add bills that are NOT shipped and NOT already in escalation sheet
+       if (invoiceState !== "Shipped" && !existingRows.some(existingRow => existingRow[0] === billNo)) {
+         console.log(`Adding new pending bill: ${billNo}`);
+         
+         // Calculate days pending based on most recent activity
+         let daysPending = 0;
+         let escalationLevel = "New";
+         
+         const billPickedTimestamp = row[billPickedTimestampCol];
+         const packingTimestamp = row[packingTimestampCol];
+         const ewayBillTimestamp = row[ewayBillTimestampCol];
+         const shippingTimestamp = row[shippingTimestampCol];
+        
+        // Use the most recent timestamp to calculate days pending
+        let mostRecentTimestamp = null;
+        
+        if (billPickedTimestamp) {
+          try {
+            const date = new Date(billPickedTimestamp);
+            if (!isNaN(date.getTime())) {
+              mostRecentTimestamp = date;
+            }
+          } catch (e) {
+            console.log(`Error parsing picked timestamp for bill ${billNo}: ${e.message}`);
+          }
+        }
+        
+        if (packingTimestamp) {
+          try {
+            const date = new Date(packingTimestamp);
+            if (!isNaN(date.getTime()) && (!mostRecentTimestamp || date > mostRecentTimestamp)) {
+              mostRecentTimestamp = date;
+            }
+          } catch (e) {
+            console.log(`Error parsing packing timestamp for bill ${billNo}: ${e.message}`);
+          }
+        }
+        
+        if (ewayBillTimestamp) {
+          try {
+            const date = new Date(ewayBillTimestamp);
+            if (!isNaN(date.getTime()) && (!mostRecentTimestamp || date > mostRecentTimestamp)) {
+              mostRecentTimestamp = date;
+            }
+          } catch (e) {
+            console.log(`Error parsing e-way bill timestamp for bill ${billNo}: ${e.message}`);
+          }
+        }
+        
+        if (shippingTimestamp) {
+          try {
+            const date = new Date(shippingTimestamp);
+            if (!isNaN(date.getTime()) && (!mostRecentTimestamp || date > mostRecentTimestamp)) {
+              mostRecentTimestamp = date;
+            }
+          } catch (e) {
+            console.log(`Error parsing shipping timestamp for bill ${billNo}: ${e.message}`);
+          }
+        }
+        
+        // Calculate days pending
+        if (mostRecentTimestamp) {
+          const timeDiff = currentDate.getTime() - mostRecentTimestamp.getTime();
+          daysPending = Math.ceil(timeDiff / (1000 * 3600 * 24));
+          
+          // Determine escalation level
+          if (daysPending >= 1 && daysPending < 2) {
+            escalationLevel = "Yellow";
+          } else if (daysPending >= 2 && daysPending <= 4) {
+            escalationLevel = "Orange";
+          } else if (daysPending > 4) {
+            escalationLevel = "Red";
+          } else {
+            escalationLevel = "New";
+          }
+        }
+        
+        console.log(`Bill ${billNo}: ${daysPending} days pending, Level: ${escalationLevel}`);
+        
+                 // Create new row data (excluding Invoice State, Day, Month)
+         const newRowData = [
+           row[billNoCol],
+           row[manualBillCol] || "",
+           row[customerCol],
+           row[pickedByCol],
+           row[billPickedTimestampCol],
+           row[packedByCol],
+           row[packingTimestampCol],
+           row[headersRow.indexOf("E-way Bill By")],
+           row[ewayBillTimestampCol],
+           row[shippingByCol],
+           row[shippingTimestampCol],
+           row[headersRow.indexOf("Courier")],
+           row[headersRow.indexOf("No of Boxes")],
+           row[headersRow.indexOf("Weight (kg)")],
+           row[headersRow.indexOf("AWB Number")],
+           row[headersRow.indexOf("AWB Timestamp")],
+           daysPending,
+           escalationLevel
+         ];
+        
+        updatedRows.push({
+          rowData: newRowData,
+          daysPending: daysPending,
+          escalationLevel: escalationLevel,
+          isNew: true
+        });
+      } else {
+        console.log(`Skipping bill ${billNo}: ${invoiceState === "Shipped" ? "Already shipped" : "Already in escalation sheet"}`);
+      }
+    });
+    
+    console.log("Total rows to add:", updatedRows.length);
+    
+    // Add new rows to escalation sheet
+    if (updatedRows.length > 0) {
+      const sheetData = updatedRows.map(item => item.rowData);
+      console.log("Writing", sheetData.length, "rows to escalation sheet");
+      
+      // Append new rows after existing data
+      const startRow = Math.max(2, escalationSheet.getLastRow() + 1);
+      escalationSheet.getRange(startRow, 1, sheetData.length, escalationHeaders.length).setValues(sheetData);
+      
+      // Apply color coding inline
+      console.log("Applying color coding starting from row:", startRow);
+      
+      let currentRow = startRow;
+      
+      // Red level (Critical) - Red background, white text
+      const redRows = updatedRows.filter(item => item.escalationLevel === "Red");
+      if (redRows.length > 0) {
+        const redRange = escalationSheet.getRange(currentRow, 1, redRows.length, 18);
+        redRange.setBackground("#ea4335").setFontColor("#ffffff");
+        console.log(`Applied red color to ${redRows.length} rows starting from row ${currentRow}`);
+        currentRow += redRows.length;
+      }
+      
+      // Orange level (High) - Orange background, black text
+      const orangeRows = updatedRows.filter(item => item.escalationLevel === "Orange");
+      if (orangeRows.length > 0) {
+        const orangeRange = escalationSheet.getRange(currentRow, 1, orangeRows.length, 18);
+        orangeRange.setBackground("#ff9800").setFontColor("#000000");
+        console.log(`Applied orange color to ${orangeRows.length} rows starting from row ${currentRow}`);
+        currentRow += orangeRows.length;
+      }
+      
+      // Yellow level (Medium) - Yellow background, black text
+      const yellowRows = updatedRows.filter(item => item.escalationLevel === "Yellow");
+      if (yellowRows.length > 0) {
+        const yellowRange = escalationSheet.getRange(currentRow, 1, yellowRows.length, 18);
+        yellowRange.setBackground("#ffeb3b").setFontColor("#000000");
+        console.log(`Applied yellow color to ${yellowRows.length} rows starting from row ${currentRow}`);
+        currentRow += yellowRows.length;
+      }
+      
+      // New level (Low) - Light green background, black text
+      const newRows = updatedRows.filter(item => item.escalationLevel === "New");
+      if (newRows.length > 0) {
+        const newRange = escalationSheet.getRange(currentRow, 1, newRows.length, 18);
+        newRange.setBackground("#c8e6c9").setFontColor("#000000");
+        console.log(`Applied green color to ${newRows.length} rows starting from row ${currentRow}`);
+      }
+      
+      console.log("=== ESCALATION SHEET UPDATED SUCCESSFULLY ===");
+      console.log(`Total pending bills: ${updatedRows.length}`);
+      console.log(`🔴 Red level (Critical) more than 4 days: ${updatedRows.filter(b => b.escalationLevel === "Red").length}`);
+      console.log(`🟠 Orange level (High) 2 to 4 days: ${updatedRows.filter(b => b.escalationLevel === "Orange").length}`);
+      console.log(`🟡 Yellow level (Medium) 1 to 2 days: ${updatedRows.filter(b => b.escalationLevel === "Yellow").length}`);
+      console.log(`🟢 New level (Low) less than 1 day: ${updatedRows.filter(b => b.escalationLevel === "New").length}`);
+    } else {
+      console.log("No new pending bills to add");
+    }
+    
+    console.log("=== ESCALATION LOGIC COMPLETED SUCCESSFULLY ===");
+    
+  } catch (error) {
+    console.log("=== ERROR IN ESCALATION LOGIC ===");
+    console.log("Error:", error.message);
+    console.log("Stack:", error.stack);
+  }
   
   // Log summary
   console.log("=== PROCESSING SUMMARY ===");
@@ -476,326 +738,249 @@ function showDailyReportProcessingStatus() {
 
 // Function to update Pending Orders Escalation sheet
 function updatePendingOrdersEscalation(processedRows) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let escalationSheet = ss.getSheetByName("Pending Orders Escalation");
+  console.log("=== ESCALATION FUNCTION STARTED ===");
+  console.log("Received rows:", processedRows.length);
   
-  // Create escalation sheet if it doesn't exist
-  if (!escalationSheet) {
-    escalationSheet = ss.insertSheet("Pending Orders Escalation");
-    
-    // Define escalation headers (same as New Dashboard1 except last 3 columns)
-    const escalationHeaders = [
-      "Bill No",
-      "Manual Bill Entry", 
-      "Customer Name",
-      "Picked By",
-      "Bill Picked Timestamp",
-      "Packed By", 
-      "Packing Timestamp",
-      "E-way Bill By",
-      "E-way Bill Timestamp",
-      "Shipping By",
-      "Shipping Timestamp",
-      "Courier",
-      "No of Boxes",
-      "Weight (kg)",
-      "AWB Number",
-      "AWB Timestamp",
-      "Days Pending",
-      "Escalation Level"
-    ];
-    
-    // Set headers
-    escalationSheet.getRange(1, 1, 1, escalationHeaders.length)
-      .setValues([escalationHeaders])
-      .setFontWeight("bold")
-      .setBackground("#f1f3f4");
-    
-    // Auto-resize columns
-    escalationSheet.autoResizeColumns(1, escalationHeaders.length);
-    
-    // Set column widths for timestamp columns
-    escalationSheet.setColumnWidth(5, 180);  // Bill Picked Timestamp
-    escalationSheet.setColumnWidth(7, 180);  // Packing Timestamp
-    escalationSheet.setColumnWidth(9, 180);  // E-way Bill Timestamp
-    escalationSheet.setColumnWidth(11, 180); // Shipping Timestamp
-    escalationSheet.setColumnWidth(16, 180); // AWB Timestamp
-    
-    // Freeze header row
-    escalationSheet.setFrozenRows(1);
-  }
+  // Simple test to see if function is working
+  console.log("Function is executing...");
   
-  // Get current data from escalation sheet
-  const escalationData = escalationSheet.getDataRange().getValues();
-  const escalationHeaders = escalationData[0];
-  const existingRows = escalationData.slice(1); // Skip header
+  // Test basic operations
+  console.log("Testing basic operations...");
+  const testArray = [1, 2, 3];
+  console.log("Array test:", testArray.length);
   
-  // Find required column indices
-  const billNoCol = escalationHeaders.indexOf("Bill No");
-  const invoiceStateCol = escalationHeaders.indexOf("Invoice State");
-  const daysPendingCol = escalationHeaders.indexOf("Days Pending");
-  const escalationLevelCol = escalationHeaders.indexOf("Escalation Level");
-  
-  // Get column indices from New Dashboard1 for comparison
-  const dashboardSheet = ss.getSheetByName("New Dashboard1");
-  const dashboardData = dashboardSheet.getDataRange().getValues();
-  const dashboardHeaders = dashboardData[0];
-  const dashboardInvoiceStateCol = dashboardHeaders.indexOf("Invoice State");
-  const dashboardBillPickedTimestampCol = dashboardHeaders.indexOf("Bill Picked Timestamp");
-  const dashboardPackingTimestampCol = dashboardHeaders.indexOf("Packing Timestamp");
-  const dashboardEwayBillTimestampCol = dashboardHeaders.indexOf("E-way Bill Timestamp");
-  const dashboardShippingTimestampCol = dashboardHeaders.indexOf("Shipping Timestamp");
-  
-  const currentDate = new Date();
-  const updatedRows = [];
-  const billsToRemove = new Set();
-  
-  // Process each row from the escalation sheet
-  existingRows.forEach((row, index) => {
-    const billNo = row[billNoCol];
+  try {
+    console.log("Entered try block...");
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    console.log("Got spreadsheet object");
     
-    // Find corresponding row in New Dashboard1
-    const dashboardRow = dashboardData.find(dRow => dRow[dashboardHeaders.indexOf("Bill No")] === billNo);
-    
-    if (dashboardRow) {
-      const invoiceState = dashboardRow[dashboardInvoiceStateCol];
+    // Get or create escalation sheet
+    let escalationSheet = ss.getSheetByName("Pending Orders Escalation");
+    if (!escalationSheet) {
+      console.log("Creating new Pending Orders Escalation sheet");
+      escalationSheet = ss.insertSheet("Pending Orders Escalation");
       
-      // Condition 1: If bill is shipped, mark for removal
-      if (invoiceState === "Shipped") {
-        billsToRemove.add(billNo);
-        return; // Skip this row
-      }
-      
-      // Calculate days pending based on the most recent activity
-      let daysPending = 0;
-      let escalationLevel = "";
-      
-      const billPickedTimestamp = dashboardRow[dashboardBillPickedTimestampCol];
-      const packingTimestamp = dashboardRow[dashboardPackingTimestampCol];
-      const ewayBillTimestamp = dashboardRow[dashboardEwayBillTimestampCol];
-      const shippingTimestamp = dashboardRow[dashboardShippingTimestampCol];
-      
-      if (billPickedTimestamp) {
-        try {
-          const pickedDate = new Date(billPickedTimestamp);
-          if (!isNaN(pickedDate.getTime())) {
-            const timeDiff = currentDate.getTime() - pickedDate.getTime();
-            daysPending = Math.ceil(timeDiff / (1000 * 3600 * 24));
-          }
-        } catch (e) {
-          console.log(`Error parsing picked timestamp for bill ${billNo}: ${e.message}`);
-        }
-      } else if (packingTimestamp) {
-        try {
-          const packedDate = new Date(packingTimestamp);
-          if (!isNaN(packedDate.getTime())) {
-            const timeDiff = currentDate.getTime() - packedDate.getTime();
-            daysPending = Math.ceil(timeDiff / (1000 * 3600 * 24));
-          }
-        } catch (e) {
-          console.log(`Error parsing packing timestamp for bill ${billNo}: ${e.message}`);
-        }
-      } else if (ewayBillTimestamp) {
-        try {
-          const ewayDate = new Date(ewayBillTimestamp);
-          if (!isNaN(ewayDate.getTime())) {
-            const timeDiff = currentDate.getTime() - ewayDate.getTime();
-            daysPending = Math.ceil(timeDiff / (1000 * 3600 * 24));
-          }
-        } catch (e) {
-          console.log(`Error parsing e-way bill timestamp for bill ${billNo}: ${e.message}`);
-        }
-      } else if (shippingTimestamp) {
-        try {
-          const shippingDate = new Date(shippingTimestamp);
-          if (!isNaN(shippingDate.getTime())) {
-            const timeDiff = currentDate.getTime() - shippingDate.getTime();
-            daysPending = Math.ceil(timeDiff / (1000 * 3600 * 24));
-          }
-        } catch (e) {
-          console.log(`Error parsing shipping timestamp for bill ${billNo}: ${e.message}`);
-        }
-      }
-      
-      // Determine escalation level based on days pending
-      if (daysPending >= 1 && daysPending < 2) {
-        escalationLevel = "Yellow";
-      } else if (daysPending >= 2 && daysPending <= 4) {
-        escalationLevel = "Orange";
-      } else if (daysPending > 4) {
-        escalationLevel = "Red";
-      } else {
-        escalationLevel = "New";
-      }
-      
-      // Update the row with new values
-      const updatedRow = [...row];
-      updatedRow[daysPendingCol] = daysPending;
-      updatedRow[escalationLevelCol] = escalationLevel;
-      
-      updatedRows.push({
-        rowData: updatedRow,
-        daysPending: daysPending,
-        escalationLevel: escalationLevel,
-        originalIndex: index
-      });
-    }
-  });
-  
-  // Add new bills that are not in the escalation sheet
-  processedRows.forEach(row => {
-    const billNo = row[dashboardHeaders.indexOf("Bill No")];
-    const invoiceState = row[dashboardInvoiceStateCol];
-    
-    // Only process bills that are not shipped and not already in escalation sheet
-    if (invoiceState !== "Shipped" && !existingRows.some(existingRow => existingRow[billNoCol] === billNo)) {
-      // Calculate days pending for new bills
-      let daysPending = 0;
-      let escalationLevel = "";
-      
-      const billPickedTimestamp = row[dashboardBillPickedTimestampCol];
-      const packingTimestamp = row[dashboardPackingTimestampCol];
-      const ewayBillTimestamp = row[dashboardEwayBillTimestampCol];
-      const shippingTimestamp = row[dashboardShippingTimestampCol];
-      
-      if (billPickedTimestamp) {
-        try {
-          const pickedDate = new Date(billPickedTimestamp);
-          if (!isNaN(pickedDate.getTime())) {
-            const timeDiff = currentDate.getTime() - pickedDate.getTime();
-            daysPending = Math.ceil(timeDiff / (1000 * 3600 * 24));
-          }
-        } catch (e) {
-          console.log(`Error parsing picked timestamp for new bill ${billNo}: ${e.message}`);
-        }
-      } else if (packingTimestamp) {
-        try {
-          const packedDate = new Date(packingTimestamp);
-          if (!isNaN(packedDate.getTime())) {
-            const timeDiff = currentDate.getTime() - packedDate.getTime();
-            daysPending = Math.ceil(timeDiff / (1000 * 3600 * 24));
-          }
-        } catch (e) {
-          console.log(`Error parsing packing timestamp for new bill ${billNo}: ${e.message}`);
-        }
-      } else if (ewayBillTimestamp) {
-        try {
-          const ewayDate = new Date(ewayBillTimestamp);
-          if (!isNaN(ewayDate.getTime())) {
-            const timeDiff = currentDate.getTime() - ewayDate.getTime();
-            daysPending = Math.ceil(timeDiff / (1000 * 3600 * 24));
-          }
-        } catch (e) {
-          console.log(`Error parsing e-way bill timestamp for new bill ${billNo}: ${e.message}`);
-        }
-      } else if (shippingTimestamp) {
-        try {
-          const shippingDate = new Date(shippingTimestamp);
-          if (!isNaN(shippingDate.getTime())) {
-            const timeDiff = currentDate.getTime() - shippingDate.getTime();
-            daysPending = Math.ceil(timeDiff / (1000 * 3600 * 24));
-          }
-        } catch (e) {
-          console.log(`Error parsing shipping timestamp for new bill ${billNo}: ${e.message}`);
-        }
-      }
-      
-      // Determine escalation level for new bills
-      if (daysPending >= 1 && daysPending < 2) {
-        escalationLevel = "Yellow";
-      } else if (daysPending >= 2 && daysPending <= 4) {
-        escalationLevel = "Orange";
-      } else if (daysPending > 4) {
-        escalationLevel = "Red";
-      } else {
-        escalationLevel = "New";
-      }
-      
-      // Create new row data (excluding Invoice State, Day, Month)
-      const newRowData = [
-        row[dashboardHeaders.indexOf("Bill No")],
-        row[dashboardHeaders.indexOf("Manual Bill Entry")] || "",
-        row[dashboardHeaders.indexOf("Customer Name")],
-        row[dashboardHeaders.indexOf("Picked By")],
-        row[dashboardHeaders.indexOf("Bill Picked Timestamp")],
-        row[dashboardHeaders.indexOf("Packed By")],
-        row[dashboardHeaders.indexOf("Packing Timestamp")],
-        row[dashboardHeaders.indexOf("E-way Bill By")],
-        row[dashboardHeaders.indexOf("E-way Bill Timestamp")],
-        row[dashboardHeaders.indexOf("Shipping By")],
-        row[dashboardHeaders.indexOf("Shipping Timestamp")],
-        row[dashboardHeaders.indexOf("Courier")],
-        row[dashboardHeaders.indexOf("No of Boxes")],
-        row[dashboardHeaders.indexOf("Weight (kg)")],
-        row[dashboardHeaders.indexOf("AWB Number")],
-        row[dashboardHeaders.indexOf("AWB Timestamp")],
-        daysPending,
-        escalationLevel
+      // Define escalation headers
+      const escalationHeaders = [
+        "Bill No", "Manual Bill Entry", "Customer Name", "Picked By", "Bill Picked Timestamp",
+        "Packed By", "Packing Timestamp", "E-way Bill By", "E-way Bill Timestamp",
+        "Shipping By", "Shipping Timestamp", "Courier", "No of Boxes", "Weight (kg)",
+        "AWB Number", "AWB Timestamp", "Days Pending", "Escalation Level"
       ];
       
-      updatedRows.push({
-        rowData: newRowData,
-        daysPending: daysPending,
-        escalationLevel: escalationLevel,
-        isNew: true
-      });
-    }
-  });
-  
-  // Sort by escalation priority (Red > Orange > Yellow > New) and then by days pending
-  updatedRows.sort((a, b) => {
-    const priorityOrder = { "Red": 4, "Orange": 3, "Yellow": 2, "New": 1 };
-    const priorityDiff = priorityOrder[b.escalationLevel] - priorityOrder[a.escalationLevel];
-    
-    if (priorityDiff !== 0) {
-      return priorityDiff;
+      // Set headers
+      escalationSheet.getRange(1, 1, 1, escalationHeaders.length)
+        .setValues([escalationHeaders])
+        .setFontWeight("bold")
+        .setBackground("#f1f3f4");
+      
+      // Auto-resize columns
+      escalationSheet.autoResizeColumns(1, escalationHeaders.length);
+      escalationSheet.setFrozenRows(1);
+      console.log("New escalation sheet created with headers");
+    } else {
+      console.log("Using existing Pending Orders Escalation sheet");
     }
     
-    // If same priority, sort by days pending (descending)
-    return b.daysPending - a.daysPending;
-  });
-  
-  // Clear existing data (except headers)
-  if (escalationSheet.getLastRow() > 1) {
-    escalationSheet.getRange(2, 1, escalationSheet.getLastRow() - 1, escalationHeaders.length).clearContent();
+    // Get dashboard data for comparison
+    const dashboardSheet = ss.getSheetByName("New Dashboard1");
+    const dashboardData = dashboardSheet.getDataRange().getValues();
+    const dashboardHeaders = dashboardData[0];
+    
+    // Find column indices
+    const invoiceStateCol = dashboardHeaders.indexOf("Invoice State");
+    const billPickedTimestampCol = dashboardHeaders.indexOf("Bill Picked Timestamp");
+    const packingTimestampCol = dashboardHeaders.indexOf("Packing Timestamp");
+    const ewayBillTimestampCol = dashboardHeaders.indexOf("E-way Bill Timestamp");
+    const shippingTimestampCol = dashboardHeaders.indexOf("Shipping Timestamp");
+    
+    console.log("Dashboard columns found:", {
+      invoiceState: invoiceStateCol,
+      billPicked: billPickedTimestampCol,
+      packing: packingTimestampCol,
+      ewayBill: ewayBillTimestampCol,
+      shipping: shippingTimestampCol
+    });
+    
+    // Get existing escalation data
+    const escalationData = escalationSheet.getDataRange().getValues();
+    const escalationHeaders = escalationData[0];
+    const existingRows = escalationData.slice(1);
+    
+    console.log("Escalation sheet has", existingRows.length, "existing rows");
+    
+    const currentDate = new Date();
+    const updatedRows = [];
+    
+    // Process new rows from dashboard
+    console.log("Processing", processedRows.length, "new rows from dashboard");
+    
+    processedRows.forEach((row, index) => {
+      const billNo = row[dashboardHeaders.indexOf("Bill No")];
+      const invoiceState = row[invoiceStateCol];
+      
+      console.log(`Row ${index + 1}: Bill ${billNo}, State: ${invoiceState}`);
+      
+      // Only add bills that are NOT shipped and NOT already in escalation sheet
+      if (invoiceState !== "Shipped" && !existingRows.some(existingRow => existingRow[0] === billNo)) {
+        console.log(`Adding new pending bill: ${billNo}`);
+        
+        // Calculate days pending based on most recent activity
+        let daysPending = 0;
+        let escalationLevel = "New";
+        
+        const billPickedTimestamp = row[billPickedTimestampCol];
+        const packingTimestamp = row[packingTimestampCol];
+        const ewayBillTimestamp = row[ewayBillTimestampCol];
+        const shippingTimestamp = row[shippingTimestampCol];
+        
+        // Use the most recent timestamp to calculate days pending
+        let mostRecentTimestamp = null;
+        
+        if (billPickedTimestamp) {
+          try {
+            const date = new Date(billPickedTimestamp);
+            if (!isNaN(date.getTime())) {
+              mostRecentTimestamp = date;
+            }
+          } catch (e) {
+            console.log(`Error parsing picked timestamp for bill ${billNo}: ${e.message}`);
+          }
+        }
+        
+        if (packingTimestamp) {
+          try {
+            const date = new Date(packingTimestamp);
+            if (!isNaN(date.getTime()) && (!mostRecentTimestamp || date > mostRecentTimestamp)) {
+              mostRecentTimestamp = date;
+            }
+          } catch (e) {
+            console.log(`Error parsing packing timestamp for bill ${billNo}: ${e.message}`);
+          }
+        }
+        
+        if (ewayBillTimestamp) {
+          try {
+            const date = new Date(ewayBillTimestamp);
+            if (!isNaN(date.getTime()) && (!mostRecentTimestamp || date > mostRecentTimestamp)) {
+              mostRecentTimestamp = date;
+            }
+          } catch (e) {
+            console.log(`Error parsing e-way bill timestamp for bill ${billNo}: ${e.message}`);
+          }
+        }
+        
+        if (shippingTimestamp) {
+          try {
+            const date = new Date(shippingTimestamp);
+            if (!isNaN(date.getTime()) && (!mostRecentTimestamp || date > mostRecentTimestamp)) {
+              mostRecentTimestamp = date;
+            }
+          } catch (e) {
+            console.log(`Error parsing shipping timestamp for bill ${billNo}: ${e.message}`);
+          }
+        }
+        
+        // Calculate days pending
+        if (mostRecentTimestamp) {
+          const timeDiff = currentDate.getTime() - mostRecentTimestamp.getTime();
+          daysPending = Math.ceil(timeDiff / (1000 * 3600 * 24));
+          
+          // Determine escalation level
+          if (daysPending >= 1 && daysPending < 2) {
+            escalationLevel = "Yellow";
+          } else if (daysPending >= 2 && daysPending <= 4) {
+            escalationLevel = "Orange";
+          } else if (daysPending > 4) {
+            escalationLevel = "Red";
+          } else {
+            escalationLevel = "New";
+          }
+        }
+        
+        console.log(`Bill ${billNo}: ${daysPending} days pending, Level: ${escalationLevel}`);
+        
+        // Create new row data (excluding Invoice State, Day, Month)
+        const newRowData = [
+          row[dashboardHeaders.indexOf("Bill No")],
+          row[dashboardHeaders.indexOf("Manual Bill Entry")] || "",
+          row[dashboardHeaders.indexOf("Customer Name")],
+          row[dashboardHeaders.indexOf("Picked By")],
+          row[dashboardHeaders.indexOf("Bill Picked Timestamp")],
+          row[dashboardHeaders.indexOf("Packed By")],
+          row[dashboardHeaders.indexOf("Packing Timestamp")],
+          row[dashboardHeaders.indexOf("E-way Bill By")],
+          row[dashboardHeaders.indexOf("E-way Bill Timestamp")],
+          row[dashboardHeaders.indexOf("Shipping By")],
+          row[dashboardHeaders.indexOf("Shipping Timestamp")],
+          row[dashboardHeaders.indexOf("Courier")],
+          row[dashboardHeaders.indexOf("No of Boxes")],
+          row[dashboardHeaders.indexOf("Weight (kg)")],
+          row[dashboardHeaders.indexOf("AWB Number")],
+          row[dashboardHeaders.indexOf("AWB Timestamp")],
+          daysPending,
+          escalationLevel
+        ];
+        
+        updatedRows.push({
+          rowData: newRowData,
+          daysPending: daysPending,
+          escalationLevel: escalationLevel,
+          isNew: true
+        });
+      } else {
+        console.log(`Skipping bill ${billNo}: ${invoiceState === "Shipped" ? "Already shipped" : "Already in escalation sheet"}`);
+      }
+    });
+    
+    console.log("Total rows to add:", updatedRows.length);
+    
+    // Add new rows to escalation sheet
+    if (updatedRows.length > 0) {
+      const sheetData = updatedRows.map(item => item.rowData);
+      console.log("Writing", sheetData.length, "rows to escalation sheet");
+      
+      // Append new rows after existing data
+      const startRow = Math.max(2, escalationSheet.getLastRow() + 1);
+      escalationSheet.getRange(startRow, 1, sheetData.length, escalationHeaders.length).setValues(sheetData);
+      
+      // Apply color coding
+      applyEscalationColorCoding(escalationSheet, updatedRows, startRow);
+      
+      console.log("=== ESCALATION SHEET UPDATED SUCCESSFULLY ===");
+      console.log(`Total pending bills: ${updatedRows.length}`);
+      console.log(`🔴 Red level (Critical) more than 4 days: ${updatedRows.filter(b => b.escalationLevel === "Red").length}`);
+      console.log(`🟠 Orange level (High) 2 to 4 days: ${updatedRows.filter(b => b.escalationLevel === "Orange").length}`);
+      console.log(`🟡 Yellow level (Medium) 1 to 2 days: ${updatedRows.filter(b => b.escalationLevel === "Yellow").length}`);
+      console.log(`🟢 New level (Low) less than 1 day: ${updatedRows.filter(b => b.escalationLevel === "New").length}`);
+    } else {
+      console.log("No new pending bills to add");
+    }
+    
+  } catch (error) {
+    console.log("ERROR in escalation function:", error.message);
+    console.log("Stack:", error.stack);
+    throw error;
   }
   
-  // Write updated data
-  if (updatedRows.length > 0) {
-    const sheetData = updatedRows.map(item => item.rowData);
-    escalationSheet.getRange(2, 1, sheetData.length, escalationHeaders.length).setValues(sheetData);
-    
-    // Apply color coding and group rows by escalation level
-    applyEscalationColorCoding(escalationSheet, updatedRows);
-    
-    // Add borders
-    escalationSheet.getRange(1, 1, updatedRows.length + 1, escalationHeaders.length)
-      .setBorder(true, true, true, true, true, true);
-  }
-  
-  console.log("=== PENDING ORDERS ESCALATION UPDATED ===");
-  console.log(`Total pending bills: ${updatedRows.length}`);
-  console.log(`🔴 Red level (Critical) more than 4 days: ${updatedRows.filter(b => b.escalationLevel === "Red").length}`);
-  console.log(`🟠 Orange level (High) 2 to 4 days: ${updatedRows.filter(b => b.escalationLevel === "Orange").length}`);
-  console.log(`🟡 Yellow level (Medium) 1 to 2 days: ${updatedRows.filter(b => b.escalationLevel === "Yellow").length}`);
-  console.log(`🟢 New level (Low) less than 1 day: ${updatedRows.filter(b => b.escalationLevel === "New").length}`);
+  console.log("=== FUNCTION COMPLETING SUCCESSFULLY ===");
 }
 
 // Function to apply color coding and group rows by escalation level
-function applyEscalationColorCoding(sheet, updatedRows) {
+function applyEscalationColorCoding(sheet, updatedRows, startRow) {
   if (updatedRows.length === 0) return;
   
-  // Clear existing conditional formatting
-  sheet.clearConditionalFormatRules();
+  console.log("Applying color coding starting from row:", startRow);
   
   // Group rows by escalation level and apply colors
-  let currentRow = 2; // Start after header
+  let currentRow = startRow;
   
   // Red level (Critical) - Red background, white text
   const redRows = updatedRows.filter(item => item.escalationLevel === "Red");
   if (redRows.length > 0) {
     const redRange = sheet.getRange(currentRow, 1, redRows.length, 18);
     redRange.setBackground("#ea4335").setFontColor("#ffffff");
+    console.log(`Applied red color to ${redRows.length} rows starting from row ${currentRow}`);
     currentRow += redRows.length;
   }
   
@@ -804,6 +989,7 @@ function applyEscalationColorCoding(sheet, updatedRows) {
   if (orangeRows.length > 0) {
     const orangeRange = sheet.getRange(currentRow, 1, orangeRows.length, 18);
     orangeRange.setBackground("#ff9800").setFontColor("#000000");
+    console.log(`Applied orange color to ${orangeRows.length} rows starting from row ${currentRow}`);
     currentRow += orangeRows.length;
   }
   
@@ -812,6 +998,7 @@ function applyEscalationColorCoding(sheet, updatedRows) {
   if (yellowRows.length > 0) {
     const yellowRange = sheet.getRange(currentRow, 1, yellowRows.length, 18);
     yellowRange.setBackground("#ffeb3b").setFontColor("#000000");
+    console.log(`Applied yellow color to ${yellowRows.length} rows starting from row ${currentRow}`);
     currentRow += yellowRows.length;
   }
   
@@ -820,5 +1007,8 @@ function applyEscalationColorCoding(sheet, updatedRows) {
   if (newRows.length > 0) {
     const newRange = sheet.getRange(currentRow, 1, newRows.length, 18);
     newRange.setBackground("#c8e6c9").setFontColor("#000000");
+    console.log(`Applied green color to ${newRows.length} rows starting from row ${currentRow}`);
   }
+  
+  console.log("Color coding completed");
 }
