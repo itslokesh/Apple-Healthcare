@@ -1,22 +1,12 @@
-function dailyReportGenerator() {
+function dashboardGenerator() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const dashboardSheet = ss.getSheetByName("Automation Dashboard");
   const configSheetName = "Automations Config";
   
-  // Get current execution time in human readable format
-  const executionTime = new Date();
-  const timeString = executionTime.toLocaleString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: true,
-    timeZone: 'Asia/Kolkata'
-  });
-  
   if (!dashboardSheet) {
     console.log("Sheet 'Automation Dashboard' not found!");
     return;
-  }  
+  }
 
   // Get config sheet to track last processed row
   let configSheet = ss.getSheetByName(configSheetName);
@@ -30,7 +20,7 @@ function dailyReportGenerator() {
   let dailyReportRowIndex = -1;
   
   for (let i = 0; i < configData.length; i++) {
-    if (configData[i][0] === "Daily Report") {
+    if (configData[i][0] === "Hourly Report") {
       dailyReportRowIndex = i + 1; // +1 because sheet rows are 1-indexed
       break;
     }
@@ -40,7 +30,7 @@ function dailyReportGenerator() {
     // Add new row for Daily Report tracking
     const newRowIndex = configSheet.getLastRow() + 1;
     configSheet.getRange(newRowIndex, 1, 1, 2).setValues([
-      ["Daily Report", 1]
+      ["Hourly Report", 1]
     ]);
     dailyReportRowIndex = newRowIndex;
   }
@@ -78,8 +68,8 @@ function dailyReportGenerator() {
   }
 
   // --- Daily Report Sheet ---
-  let dailySheet = ss.getSheetByName("Daily Report 2025");
-  if (!dailySheet) dailySheet = ss.insertSheet("Daily Report 2025");
+  let dailySheet = ss.getSheetByName("Hourly Report 2025");
+  if (!dailySheet) dailySheet = ss.insertSheet("Hourly Report 2025");
   const headers = ["Date", "Employee", "Picked Count", "Packed Count", "Shipped Count", "Pending Pick", "Pending Pack", "Customer Pending", "Daily Summary"];
   if (dailySheet.getLastRow() === 0) dailySheet.appendRow(headers);
   
@@ -175,7 +165,7 @@ function dailyReportGenerator() {
       const pendingPackCount = pendingPackBills.length > 0 ? `${pendingPackBills.length} (${pendingPackBills.join(', ')})` : "0";
 
       batchValues.push([
-        `${dayKey} (${timeString})`,
+        dayKey,
         emp,
         pickedCount,
         packedCount,
@@ -224,14 +214,7 @@ function dailyReportGenerator() {
     // Merge Pending Ship (H) - unmerge first if needed
     try {
       dailySheet.getRange(startRow, 8, endRow - startRow + 1).merge();
-      // Clip overflowing text in H (Pending Ship) for readability
-      const pendingShipRange = dailySheet.getRange(startRow, 8);
-      if (pendingShipRange.setWrapStrategy) {
-        pendingShipRange.setVerticalAlignment("top").setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
-      } else {
-        // Fallback for older APIs
-        pendingShipRange.setVerticalAlignment("top").setWrap(false);
-      }
+      dailySheet.getRange(startRow, 8).setVerticalAlignment("top").setWrap(true);
     } catch (e) {
       console.log("Warning: Could not merge Pending Ship column for rows " + startRow + " to " + endRow + ": " + e.message);
     }
@@ -239,13 +222,7 @@ function dailyReportGenerator() {
     // Customer Pending (I) - wrap text - unmerge first if needed
     try {
       dailySheet.getRange(startRow, 9, endRow - startRow + 1).merge();
-      // Clip overflowing text in I (Customer Pending)
-      const customerPendingRange = dailySheet.getRange(startRow, 9);
-      if (customerPendingRange.setWrapStrategy) {
-        customerPendingRange.setVerticalAlignment("top").setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
-      } else {
-        customerPendingRange.setVerticalAlignment("top").setWrap(false);
-      }
+      dailySheet.getRange(startRow, 9).setVerticalAlignment("top").setWrap(true);
     } catch (e) {
       console.log("Warning: Could not merge Customer Pending column for rows " + startRow + " to " + endRow + ": " + e.message);
     }
@@ -355,7 +332,7 @@ function dailyReportGenerator() {
       const shippedCount = cs.shipped > 0 ? `${cs.shipped} (${cs.shippedBills.join(', ')})` : "0";
       const pendingCount = pending > 0 ? `${pending} (${pendingBills.join(', ')})` : "0";
       
-             customerMetricsRows.push([`${dayKey} (${timeString})`, custName, totalCount, pickedCount, packedCount, shippedCount, pendingCount]);
+             customerMetricsRows.push([dayKey, custName, totalCount, pickedCount, packedCount, shippedCount, pendingCount]);
      });
    });
    
@@ -438,7 +415,6 @@ function dailyReportGenerator() {
   console.log("Rows to process:", rows.length);
   console.log("First row sample:", rows[0]);
   
-  let updatedRows = [];
   try {
     console.log("=== ESCALATION LOGIC STARTED ===");
     
@@ -499,10 +475,9 @@ function dailyReportGenerator() {
      rows.forEach((row, index) => {
        const billNo = row[billNoCol];
        const invoiceState = row[invoiceStateCol];
-       
-       
+              
        // Only add bills that are NOT shipped and NOT already in escalation sheet
-       if (invoiceState !== "Shipped" && !existingRows.some(existingRow => existingRow[0] === billNo)) {         
+       if (invoiceState !== "Shipped" && !existingRows.some(existingRow => existingRow[0] === billNo)) {
          
          // Calculate days pending based on most recent activity
          let daysPending = 0;
@@ -605,9 +580,7 @@ function dailyReportGenerator() {
           escalationLevel: escalationLevel,
           isNew: true
         });
-      } else {
-        console.log(`Skipping bill ${billNo}: ${invoiceState === "Shipped" ? "Already shipped" : "Already in escalation sheet"}`);
-      }
+      } 
     });
     
     console.log("Total rows to add:", updatedRows.length);
@@ -677,35 +650,6 @@ function dailyReportGenerator() {
     console.log("=== ERROR IN ESCALATION LOGIC ===");
     console.log("Error:", error.message);
     console.log("Stack:", error.stack);
-  }
-  
-  // Build a full snapshot of pending escalations from the sheet for the summary
-  let allEscalationRows = [];
-  try {
-    const escSheet = ss.getSheetByName("Pending Orders Escalation");
-    if (escSheet) {
-      const escData = escSheet.getDataRange().getValues();
-      if (escData.length > 1) {
-        // Map rows to objects with at least billNo and escalationLevel
-        allEscalationRows = escData.slice(1).map(r => ({ billNo: r[0], escalationLevel: r[17], rowData: r }));
-      }
-    }
-  } catch (e) {
-    console.log("Warning: Could not read full escalation snapshot:", e.message);
-  }
-  
-  // Generate WhatsApp Summary Text using full escalation snapshot
-  console.log("=== GENERATING WHATSAPP SUMMARY ===");
-  const whatsappSummary = generateWhatsAppSummary(dailyMetrics, allEscalationRows, timeString);
-  console.log("WhatsApp Summary Generated:");
-  console.log(whatsappSummary);
-  
-  // Send WhatsApp summary via Twilio (uses Script Properties for config)
-  try {
-    const sentCount = sendWhatsAppSummaryViaTwilio(whatsappSummary);
-    console.log(`WhatsApp summary sent to ${sentCount} recipient(s).`);
-  } catch (e) {
-    console.log("Error sending WhatsApp summary:", e && e.message ? e.message : e);
   }
   
   // Log summary
@@ -859,7 +803,7 @@ function updatePendingOrdersEscalation(processedRows) {
     console.log("Escalation sheet has", existingRows.length, "existing rows");
     
     const currentDate = new Date();
-    updatedRows = [];
+    const updatedRows = [];
     
     // Process new rows from dashboard
     console.log("Processing", processedRows.length, "new rows from dashboard");
@@ -977,7 +921,9 @@ function updatePendingOrdersEscalation(processedRows) {
           escalationLevel: escalationLevel,
           isNew: true
         });
-      } 
+      } else {
+        console.log(`Skipping bill ${billNo}: ${invoiceState === "Shipped" ? "Already shipped" : "Already in escalation sheet"}`);
+      }
     });
     
     console.log("Total rows to add:", updatedRows.length);
@@ -1058,138 +1004,4 @@ function applyEscalationColorCoding(sheet, updatedRows, startRow) {
   }
   
   console.log("Color coding completed");
-}
-
-// Function to generate WhatsApp summary text
-function generateWhatsAppSummary(dailyMetrics, escalationRows, timeString) {
-  const currentDate = new Date().toLocaleDateString('en-IN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-  });
-  
-  // Header optimized for WhatsApp readability
-  let summary = `*DAILY REPORT*\n`;
-  summary += `Date: ${currentDate}\n`;
-  summary += `Time: ${timeString}\n`;
-  summary += `${'-'.repeat(7)}\n\n`;
-  
-  // Employee Performance Summary
-  summary += `*EMPLOYEE SUMMARY*\n`;
-  summary += `${'-'.repeat(7)}\n`;
-  
-  const employeeStats = {};
-  let totalPicked = 0, totalPacked = 0, totalShipped = 0;
-  
-  Object.keys(dailyMetrics).forEach(dayKey => {
-    const dm = dailyMetrics[dayKey];
-    
-    // Aggregate employee stats
-    Object.keys(dm.picked).forEach(emp => {
-      if (!employeeStats[emp]) employeeStats[emp] = { picked: 0, packed: 0, shipped: 0 };
-      employeeStats[emp].picked += dm.picked[emp].length;
-      totalPicked += dm.picked[emp].length;
-    });
-    
-    Object.keys(dm.packed).forEach(emp => {
-      if (!employeeStats[emp]) employeeStats[emp] = { picked: 0, packed: 0, shipped: 0 };
-      employeeStats[emp].packed += dm.packed[emp].length;
-      totalPacked += dm.packed[emp].length;
-    });
-    
-    Object.keys(dm.shipped).forEach(emp => {
-      if (!employeeStats[emp]) employeeStats[emp] = { picked: 0, packed: 0, shipped: 0 };
-      employeeStats[emp].shipped += dm.shipped[emp].length;
-      totalShipped += dm.shipped[emp].length;
-    });
-  });
-  
-  // Top performers
-  const sortedEmployees = Object.entries(employeeStats)
-    .sort((a, b) => (b[1].picked + b[1].packed + b[1].shipped) - (a[1].picked + a[1].packed + a[1].shipped))
-    .slice(0, 5);
-  
-  if (sortedEmployees.length > 0) {
-    sortedEmployees.forEach(([emp, stats], index) => {
-      const total = stats.picked + stats.packed + stats.shipped;
-      summary += `${index + 1}. ${emp}: ${total} orders (P:${stats.picked} | Pk:${stats.packed} | S:${stats.shipped})\n`;
-    });
-  }
-  
-  summary += `\n*Overall Totals*\n`;
-  summary += `• Picked: ${totalPicked} orders\n`;
-  summary += `• Packed: ${totalPacked} orders\n`;
-  summary += `• Shipped: ${totalShipped} orders\n\n`;
-  
-  // Customer Summary
-  summary += `*CUSTOMER SUMMARY*\n`;
-  summary += `${'-'.repeat(7)}\n`;
-  
-  const customerStats = {};
-  let totalCustomerOrders = 0;
-  
-  Object.keys(dailyMetrics).forEach(dayKey => {
-    const dm = dailyMetrics[dayKey];
-    dm.rowsForDay.forEach(row => {
-      const customerCol = 2; // Assuming customer name is at index 2
-      const customer = row[customerCol] || "Unknown";
-      const invoiceStateCol = 16; // Assuming invoice state is at index 16
-      const isShipped = row[invoiceStateCol] === "Shipped";
-      
-      if (!customerStats[customer]) {
-        customerStats[customer] = { total: 0, shipped: 0, pending: 0 };
-      }
-      customerStats[customer].total += 1;
-      totalCustomerOrders += 1;
-      
-      if (isShipped) {
-        customerStats[customer].shipped += 1;
-      } else {
-        customerStats[customer].pending += 1;
-      }
-    });
-  });
-  
-  // Top customers by order volume
-  const sortedCustomers = Object.entries(customerStats)
-    .sort((a, b) => b[1].total - a[1].total)
-    .slice(0, 5);
-  
-  if (sortedCustomers.length > 0) {
-    sortedCustomers.forEach(([customer, stats], index) => {
-      const completionRate = stats.total > 0 ? Math.round((stats.shipped / stats.total) * 100) : 0;
-      summary += `${index + 1}. ${customer}: ${stats.total} orders (${completionRate}% shipped)\n`;
-    });
-  }
-  
-  summary += `\n*Customer Totals*\n`;
-  summary += `• Total Orders: ${totalCustomerOrders}\n`;
-  
-  // Pending Escalations Summary
-  summary += `*PENDING ESCALATIONS*\n`;
-  summary += `${'-'.repeat(7)}\n`;
-  
-  if (escalationRows && escalationRows.length > 0) {
-    const redItems = escalationRows.filter(r => r.escalationLevel === "Red");
-    const redCount = redItems.length;
-    const redBills = redItems.map(r => Array.isArray(r.rowData) ? r.rowData[0] : (r.billNo || r[0] || "")).filter(Boolean);
-    const orangeCount = escalationRows.filter(r => r.escalationLevel === "Orange").length;
-    const yellowCount = escalationRows.filter(r => r.escalationLevel === "Yellow").length;
-    const newCount = escalationRows.filter(r => r.escalationLevel === "New").length;
-    
-    summary += `🔴 *CRITICAL (>4 days):* ${redCount} orders\n`;
-    summary += `🟠 *HIGH (2-4 days):* ${orangeCount} orders\n`;
-    summary += `🟡 *MEDIUM (1-2 days):* ${yellowCount} orders\n`;
-    summary += `🟢 *NEW (<1 day):* ${newCount} orders\n`;
-    summary += `\n📊 *Total Pending:* ${escalationRows.length} orders\n`;
-    
-    if (redCount > 0) {
-      summary += `\n*URGENT ACTION REQUIRED*\n`;
-      summary += `${redCount} orders are critically overdue: ${redBills.join(', ')}\n`;
-    }
-  } else {
-    summary += `✅ No new pending escalations\n`;
-  }
-  
-  return summary;
 }

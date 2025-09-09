@@ -1,0 +1,4 @@
+function hourlyJob() {
+  dashboardGenerator();
+  hourlyReportGenerator();
+}
