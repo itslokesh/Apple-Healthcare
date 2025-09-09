@@ -1,4 +1,4 @@
-function updatePendingOrdersEscalation() {
+function pendingOrdersGenerator() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const escalationSheet = ss.getSheetByName("Pending Orders Escalation");
   
