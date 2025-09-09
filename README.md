@@ -76,13 +76,24 @@ I designed a centralized configuration system using a dedicated "Automations Con
 
 **Annual Cost Savings**: Average client saves $45,000-$75,000 annually in operational costs, primarily through reduced manual labor and improved efficiency.
 
-## Future Development
+## WhatsApp Integration (Implemented)
 
-### WhatsApp Integration
+Real-time summaries and escalations are now sent via WhatsApp using Twilio's WhatsApp API. The system delivers:
 
-I'm currently developing integration with the WhatsApp Cloud API to provide real-time notifications to administrators. This will include priority-based messaging for critical escalations and daily performance summaries sent to management teams.
+- Hourly performance summaries and customer stats
+- Daily summaries with top performers and totals
+- Escalation breakdown with Red/Orange/Yellow/New counts
+- Critically overdue bill numbers listed for Red items
 
-The integration will use webhooks to push data in real-time, with configurable message templates for different notification types. I'm also implementing delivery tracking to ensure critical alerts are received.
+Key implementation details:
+
+- Helpers live in `Sales Dashboard/whatsappHelpers.gs`:
+  - `getTwilioConfig_()`, `normalizeWhatsAppNumber_()`, `sendWhatsAppMessageViaTwilio_()`, `sendWhatsAppSummaryViaTwilio()`
+- Messages are automatically split to comply with WhatsApp's 1024-character limit.
+  - Each chunk is prefixed with a part indicator: `(1/N)` on a new line
+  - Chunking prefers line boundaries; long lines are hard-split
+  - Ordering is preserved by sequential sends
+- From address must be a WhatsApp-enabled Twilio sender (sandbox or approved number)
 
 ### Advanced Analytics
 
@@ -93,6 +104,64 @@ Planned enhancements include predictive analytics for order processing times and
 ### Setup Requirements
 
 The system requires a Google Workspace account with Google Apps Script enabled. I've designed it to be self-contained, with minimal external dependencies to simplify deployment.
+
+### WhatsApp/Twilio Configuration
+
+Set these Script Properties (Apps Script → Project Settings → Script properties):
+
+- `TWILIO_ACCOUNT_SID`: Your Twilio Account SID (e.g., `ACxxxxxxxx...`)
+- `TWILIO_AUTH_TOKEN`: Your Twilio Auth Token
+- `TWILIO_WHATSAPP_FROM`: Your WhatsApp-enabled sender
+  - Sandbox: `whatsapp:+14155238886`
+  - Approved sender: `whatsapp:+1XXXXXXXXXX`
+- `WHATSAPP_RECIPIENTS`: Comma-separated E.164 numbers (no `whatsapp:` prefix), e.g., `+91999...,+91888...`
+
+Notes:
+
+- For the Twilio WhatsApp Sandbox, each recipient must opt-in by sending the provided join code to `+1 415 523 8886`.
+- If using an approved WhatsApp sender, opt-in is not required, but templates may be needed to initiate conversations outside 24-hour windows.
+
+### Running the Automations
+
+Jobs entrypoints (Apps Script functions):
+
+- `hourlyJob()` in `Sales Dashboard/hourlyJob.gs`
+  - Runs `dashboardGenerator()` and `hourlyReportGenerator()`
+- `dailyJob()` in `Sales Dashboard/dailyJob.gs`
+  - Runs `dashboardGenerator()`, `pendingOrdersGenerator()`, `dailyReportGenerator()`
+- `monthlyJob()` in `Sales Dashboard/monthlyjob.gs`
+  - Runs `dashboardGenerator()` and `monthlyReportGenerator()`
+
+Primary generators/processors:
+
+- `Sales Dashboard/dashboardGenerator.gs`: updates the Automation Dashboard slice used by subsequent steps
+- `Sales Dashboard/hourlyReportGenerator.gs`: writes Hourly Report 2025 sheet and composes Hourly WhatsApp summary
+- `Sales Dashboard/dailyReportGenerator.gs`: writes Daily Report 2025 sheet and composes Daily WhatsApp summary
+- `Sales Dashboard/monthlyReportGenerator.gs`: writes Monthly Report 2025 sheet and charts
+- `Sales Dashboard/pendingOrdersGenerator.gs`: refreshes Pending Orders Escalation sheet, recalculates levels and applies formatting
+- `Sales Dashboard/whatsappHelpers.gs`: Twilio WhatsApp sending helpers
+
+### WhatsApp Message Format and Limits
+
+- Header includes report type, date and time, with compact separators for WhatsApp readability
+- Escalations section shows counts and totals; if Red > 0, includes bill numbers
+- Message length limit: 1024 characters per WhatsApp message
+  - Automatic chunking with `(i/N)` header and a newline before the chunk body
+  - Each chunk is ≤ 1024 chars after accounting for header and newline
+
+### Troubleshooting
+
+- Error `63007: Twilio could not find a Channel with the specified From address`
+  - Ensure `TWILIO_WHATSAPP_FROM` is a valid WhatsApp sender for your Twilio account
+  - Use `whatsapp:+14155238886` for sandbox, or your approved number with `whatsapp:+<E.164>`
+  - For sandbox, confirm recipients have joined the sandbox via the join code
+- No messages received
+  - Verify Script Properties are set (no surrounding quotes)
+  - Check logs for "WhatsApp Summary Generated" and send counts
+  - Confirm recipient numbers are E.164 and listed in `WHATSAPP_RECIPIENTS`
+- Long messages break formatting
+  - Chunking is enabled by default; messages are split on line boundaries when possible
+  - Consider tightening sections or reducing top-N lists if you want fewer chunks
 
 ### Maintenance Features
 
@@ -118,8 +187,8 @@ The system has been tested in production environments and has proven to be relia
 
 ---
 
-**Version**: 1.0  
-**Last Updated**: February 2025  
+**Version**: 1.1  
+**Last Updated**: September 2025  
 **Compatibility**: Google Workspace, Google Apps Script  
 **License**: Proprietary - Apple Healthcare  
 
