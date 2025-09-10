@@ -1111,8 +1111,7 @@ function generateWhatsAppSummary(dailyMetrics, escalationRows, timeString) {
   
   if (sortedEmployees.length > 0) {
     sortedEmployees.forEach(([emp, stats], index) => {
-      const total = stats.picked + stats.packed + stats.shipped;
-      summary += `${index + 1}. ${emp}: ${total} orders (P:${stats.picked} | Pk:${stats.packed} | S:${stats.shipped})\n`;
+      summary += `${index + 1}. ${emp}: (P:${stats.picked} | Pk:${stats.packed} | S:${stats.shipped})\n`;
     });
   }
   
@@ -1172,6 +1171,12 @@ function generateWhatsAppSummary(dailyMetrics, escalationRows, timeString) {
   if (escalationRows && escalationRows.length > 0) {
     const redItems = escalationRows.filter(r => r.escalationLevel === "Red");
     const redCount = redItems.length;
+    // Sort oldest first using Days Pending (index 16 in escalation sheet rowData)
+    redItems.sort((a, b) => {
+      const da = Array.isArray(a.rowData) ? (parseFloat(a.rowData[16]) || 0) : (a.daysPending || 0);
+      const db = Array.isArray(b.rowData) ? (parseFloat(b.rowData[16]) || 0) : (b.daysPending || 0);
+      return db - da; // higher days pending first => oldest first
+    });
     const redBills = redItems.map(r => Array.isArray(r.rowData) ? r.rowData[0] : (r.billNo || r[0] || "")).filter(Boolean);
     const orangeCount = escalationRows.filter(r => r.escalationLevel === "Orange").length;
     const yellowCount = escalationRows.filter(r => r.escalationLevel === "Yellow").length;
