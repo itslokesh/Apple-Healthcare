@@ -1106,8 +1106,7 @@ function generateWhatsAppSummary(dailyMetrics, escalationRows, timeString) {
   
   // Top performers
   const sortedEmployees = Object.entries(employeeStats)
-    .sort((a, b) => (b[1].picked + b[1].packed + b[1].shipped) - (a[1].picked + a[1].packed + a[1].shipped))
-    .slice(0, 5);
+    .sort((a, b) => (b[1].picked + b[1].packed + b[1].shipped) - (a[1].picked + a[1].packed + a[1].shipped));
   
   if (sortedEmployees.length > 0) {
     sortedEmployees.forEach(([emp, stats], index) => {
@@ -1149,10 +1148,8 @@ function generateWhatsAppSummary(dailyMetrics, escalationRows, timeString) {
     });
   });
   
-  // Top customers by order volume
-  const sortedCustomers = Object.entries(customerStats)
-    .sort((a, b) => b[1].total - a[1].total)
-    .slice(0, 5);
+  // All customers by order volume
+  const sortedCustomers = Object.entries(customerStats).sort((a, b) => b[1].total - a[1].total);
   
   if (sortedCustomers.length > 0) {
     sortedCustomers.forEach(([customer, stats], index) => {

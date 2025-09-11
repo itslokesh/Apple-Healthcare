@@ -221,18 +221,22 @@ function hourlyReportGenerator() {
       console.log("Warning: Could not merge Date column for rows " + startRow + " to " + endRow + ": " + e.message);
     }
 
-    // Merge Pending Ship (H) - unmerge first if needed
+    // Merge Pending Ship (H) - clip text
     try {
       dailySheet.getRange(startRow, 8, endRow - startRow + 1).merge();
-      dailySheet.getRange(startRow, 8).setVerticalAlignment("top").setWrap(true);
+      dailySheet.getRange(startRow, 8)
+        .setVerticalAlignment("top")
+        .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
     } catch (e) {
       console.log("Warning: Could not merge Pending Ship column for rows " + startRow + " to " + endRow + ": " + e.message);
     }
 
-    // Customer Pending (I) - wrap text - unmerge first if needed
+    // Customer Pending (I) - clip text
     try {
       dailySheet.getRange(startRow, 9, endRow - startRow + 1).merge();
-      dailySheet.getRange(startRow, 9).setVerticalAlignment("top").setWrap(true);
+      dailySheet.getRange(startRow, 9)
+        .setVerticalAlignment("top")
+        .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
     } catch (e) {
       console.log("Warning: Could not merge Customer Pending column for rows " + startRow + " to " + endRow + ": " + e.message);
     }
@@ -1094,10 +1098,8 @@ function generateWhatsAppSummary(dailyMetrics, escalationRows, timeString) {
   });
   
   // Top performers
-  const sortedEmployees = Object.entries(employeeStats)
-    .sort((a, b) => (b[1].picked + b[1].packed + b[1].shipped) - (a[1].picked + a[1].packed + a[1].shipped))
-    .slice(0, 5);
-  
+  const sortedEmployees = Object.entries(employeeStats).sort((a, b) => (b[1].picked + b[1].packed + b[1].shipped) - (a[1].picked + a[1].packed + a[1].shipped));  
+
   if (sortedEmployees.length > 0) {
     sortedEmployees.forEach(([emp, stats], index) => {
       summary += `${index + 1}. ${emp}: (P:${stats.picked} | Pk:${stats.packed} | S:${stats.shipped})\n`;
@@ -1139,9 +1141,7 @@ function generateWhatsAppSummary(dailyMetrics, escalationRows, timeString) {
   });
   
   // Top customers by order volume
-  const sortedCustomers = Object.entries(customerStats)
-    .sort((a, b) => b[1].total - a[1].total)
-    .slice(0, 5);
+  const sortedCustomers = Object.entries(customerStats).sort((a, b) => b[1].total - a[1].total);
   
   if (sortedCustomers.length > 0) {
     sortedCustomers.forEach(([customer, stats], index) => {
